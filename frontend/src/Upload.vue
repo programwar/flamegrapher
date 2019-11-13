@@ -57,7 +57,7 @@
         this.currentStatus = STATUS_SAVING;
         this.uploadError = null;
 
-        this.$http.post("/form/file", formData)
+        this.$http.post("/api/form/file", formData)
           .then(x => {
             this.$router.push({path: "/dumps"});
             this.currentStatus = STATUS_SUCCESS;

@@ -63,26 +63,22 @@ public class JavaFlightRecorder implements Profiler {
     String recordingOption = "name";
     private final String dumpsBucket;
     private final String flamesBucket;
-    private final String dumpsPrefix;
-    private final String flamesPrefix;
 
     public JavaFlightRecorder(Vertx vertx, JsonObject config) {
         this.vertx = vertx;
         this.config = config;
         s3ClientOptions = new S3ClientOptions().setHostnameOverride(config.getString("FLAMEGRAPHER_S3_SERVER"))
-                                               .setAwsRegion(config.getString("FLAMEGRAPHER_S3_REGION", "us-east-1"))
-                                               .setAwsServiceName("s3")
-                                               .setConnectTimeout(30000)
-                                               .setGlobalTimeoutMs(30000L)
-                                               .setDefaultPort(config.getInteger("FLAMEGRAPHER_S3_PORT", 80))
-                                               .setAwsAccessKey(config.getString("FLAMEGRAPHER_S3_ACCESS_KEY"))
-                                               .setAwsSecretKey(config.getString("FLAMEGRAPHER_S3_SECRET_KEY"));
+                .setAwsRegion("us-east-1")
+                .setAwsServiceName("s3")
+                .setConnectTimeout(30000)
+                .setGlobalTimeoutMs(30000L)
+                .setDefaultPort(config.getInteger("FLAMEGRAPHER_S3_PORT", 80))
+                .setAwsAccessKey(config.getString("FLAMEGRAPHER_S3_ACCESS_KEY"))
+                .setAwsSecretKey(config.getString("FLAMEGRAPHER_S3_SECRET_KEY"));
 
         s3Client = new S3Client(vertx, s3ClientOptions);
         dumpsBucket = config.getString("FLAMEGRAPHER_S3_DUMPS_BUCKET", "dumps");
         flamesBucket = config.getString("FLAMEGRAPHER_S3_FLAMES_BUCKET", "flames");
-        dumpsPrefix = config.getString("FLAMEGRAPHER_S3_DUMPS_PREFIX", "");
-        flamesPrefix = config.getString("FLAMEGRAPHER_S3_FLAMES_PREFIX", "");
         try {
             Files.createDirectories(Paths.get(workingDir()));
         } catch (IOException e) {
@@ -103,7 +99,7 @@ public class JavaFlightRecorder implements Profiler {
         List<Future> jvms = new ArrayList<>();
         processesFuture.compose(processes -> {
             for (Item item : processes.items()
-                                      .values()) {
+                    .values()) {
                 String pid = item.getPid();
 
                 if (notJcmdItself(item)) {
@@ -121,8 +117,8 @@ public class JavaFlightRecorder implements Profiler {
                 if (h.succeeded()) {
                     for (Future f : jvms) {
                         JVM jvm = (JVM) f.result();
-                        // Only HotSpot ships with JFR for now
-                        if (JVMType.HOTSPOT.equals(jvm.getType())) {
+                        // Java 11 and newer, as well as older Hotspots, ship with JFR
+                        if (JVMType.HOTSPOT.equals(jvm.getType()) || jvm.getMajorVersion() >= 11) {
                             Future<Item> statusCheck = Future.future();
                             jfrChecks.add(statusCheck);
                             // Will retrieve the status, i.e. recording or not
@@ -146,8 +142,10 @@ public class JavaFlightRecorder implements Profiler {
                 JsonArray results = new JsonArray();
                 for (Future f : jfrChecks) {
                     Item status = (Item) f.result();
+                    logger.info(status);
+                    logger.info("Processes: " + processes);
                     Item item = processes.items()
-                                         .get(status.getPid());
+                            .get(status.getPid());
                     item.setState(status.getState());
                     item.setRecordingNumber(status.getRecordingNumber());
                     JsonObject json = JsonObject.mapFrom(item);
@@ -162,28 +160,32 @@ public class JavaFlightRecorder implements Profiler {
 
     private boolean notJcmdItself(Item item) {
         return !item.getName()
-                    .contains("jcmd");
+                .contains("jcmd");
     }
 
     @Override
     public void start(String pid, Future<Item> handler) {
         // First run jcmd 8683 VM.unlock_commercial_features
         // Then run jcmd 8683 JFR.start
-        Future<Void> unlockFuture = Future.future();
-        jcmd(asList(pid, "VM.unlock_commercial_features"), unlockFuture);
 
         Future<JVM> jvmVersionFuture = Future.future();
-        unlockFuture.compose(s -> {
-            // There could be custom settings, so we need to check the JDK
-            // version to
-            // see which one we should apply
-            jcmd(asList(pid, "VM.version"), jvmVersionFuture, JVM::fromVMVersion);
-        }, jvmVersionFuture);
+        jcmd(asList(pid, "VM.version"), jvmVersionFuture, JVM::fromVMVersion);
+
+        Future<Void> unlockFuture = Future.future();
+        LinkedList<String> arguments = new LinkedList<>(asList(pid, "JFR.start"));
+        jvmVersionFuture.compose(version -> {
+            // JFR is not a commercial feature from Java 11 onwards
+            addSettingsIfPresent(arguments, version);
+            if (version.getMajorVersion() < 11) {
+                jcmd(asList(pid, "VM.unlock_commercial_features"), unlockFuture);
+            }
+            else {
+                unlockFuture.complete();
+            }
+        }, unlockFuture);
 
         Future<Void> startFuture = Future.future();
-        jvmVersionFuture.compose(version -> {
-            LinkedList<String> arguments = new LinkedList<>(asList(pid, "JFR.start"));
-            addSettingsIfPresent(arguments, version);
+        unlockFuture.compose(s -> {
             jcmd(arguments, handler, Item::fromStart);
         }, startFuture);
     }
@@ -251,44 +253,43 @@ public class JavaFlightRecorder implements Profiler {
     private String workingDir() {
         return config.getString("FLAMEGRAPHER_JFR_DUMP_PATH", "/tmp/flamegrapher/");
     }
-    
+
     public void storeFileLocally(FileUpload fileUpload, Future<String> handler) {
-	vertx.fileSystem().move(fileUpload.uploadedFileName(), workingDir() + "uploaded-" + fileUpload.fileName(), asyncFile -> {
-	    if (asyncFile.succeeded()) {
-		handler.complete("uploaded-" + fileUpload.fileName());
-	    } else {
-		handler.fail(asyncFile.cause());
-	    }
-	    vertx.fileSystem().delete(fileUpload.uploadedFileName(), asyncDelete -> {
-		    if (!asyncFile.succeeded()) {
-			logger.error("Unable to delete ", fileUpload.uploadedFileName());
-		    };
-	    });
-	});
+        vertx.fileSystem().move(fileUpload.uploadedFileName(), workingDir() + "uploaded-" + fileUpload.fileName(), asyncFile -> {
+            if (asyncFile.succeeded()) {
+                handler.complete("uploaded-" + fileUpload.fileName());
+            } else {
+                handler.fail(asyncFile.cause());
+            }
+            vertx.fileSystem().delete(fileUpload.uploadedFileName(), asyncDelete -> {
+                if (!asyncFile.succeeded()) {
+                    logger.error("Unable to delete ", fileUpload.uploadedFileName());
+                };
+            });
+        });
     }
 
     @Override
     public void save(String pid, String recording, Future<JsonObject> handler) {
         String filename = filename(pid, recording);
         vertx.fileSystem()
-             .open(filename, new OpenOptions().setRead(true), asyncFile -> {
-                 if (asyncFile.succeeded()) {
-                     String key = Paths.get(filename)
-                                       .getFileName()
-                                       .resolve(dumpsPrefix)
-                                       .toString();
-                     s3Client.adaptiveUpload(dumpsBucket, key,
-                             new AdaptiveUploadRequest(asyncFile.result()).withContentType("application/jfr-dump"),
-                             response -> {
-                                 JsonObject json = new JsonObject();
-                                 json.put("key", key);
-                                 json.put("url", s3Client.getHostname() + "/" + dumpsBucket + "/" + key);
-                                 handler.complete(json);
-                             }, e -> handler.fail(e));
-                 } else {
-                     handler.fail(asyncFile.cause());
-                 }
-             });
+                .open(filename, new OpenOptions().setRead(true), asyncFile -> {
+                    if (asyncFile.succeeded()) {
+                        String key = Paths.get(filename)
+                                .getFileName()
+                                .toString();
+                        s3Client.adaptiveUpload(dumpsBucket, key,
+                                new AdaptiveUploadRequest(asyncFile.result()).withContentType("application/jfr-dump"),
+                                response -> {
+                                    JsonObject json = new JsonObject();
+                                    json.put("key", key);
+                                    json.put("url", s3Client.getHostname() + "/" + dumpsBucket + "/" + key);
+                                    handler.complete(json);
+                                }, e -> handler.fail(e));
+                    } else {
+                        handler.fail(asyncFile.cause());
+                    }
+                });
     }
 
     private String s3Server() {
@@ -304,9 +305,8 @@ public class JavaFlightRecorder implements Profiler {
                 Buffer buf = Buffer.buffer(Json.encode(r.result()));
 
                 String key = eventType + "." + Paths.get(filename)
-                                                    .getFileName()
-                                                    .resolve(flamesPrefix)
-                                                    .toString();
+                        .getFileName()
+                        .toString();
                 s3Client.putObject(flamesBucket, key,
                         new PutObjectRequest(buf).withContentType(APPLICATION_JSON_CHARSET_UTF_8), response -> {
                             logger.info(response.getHeader());
@@ -326,27 +326,27 @@ public class JavaFlightRecorder implements Profiler {
     public void listDumps(Future<JsonArray> handler) {
         String dirName = workingDir();
         vertx.fileSystem()
-             .readDir(dirName, ".+\\.jfr", dirStream -> {
-                 if (dirStream.failed()) {
-                     handler.fail(dirStream.cause());
-                 } else {
-                     JsonArray results = new JsonArray();
-                     dirStream.result()
-                              .stream()
-                              .map(fullPath -> Paths.get(fullPath)
-                                                    .getFileName())
-                              .forEach(file -> {
-                                  String[] components = file.getFileName()
-                                                            .toString()
-                                                            .split("\\.");
-                                  JsonObject json = new JsonObject();
-                                  json.put("pid", components[0]);
-                                  json.put("recording", components[1]);
-                                  results.add(json);
-                              });
-                     handler.complete(results);
-                 }
-             });
+                .readDir(dirName, ".+\\.jfr", dirStream -> {
+                    if (dirStream.failed()) {
+                        handler.fail(dirStream.cause());
+                    } else {
+                        JsonArray results = new JsonArray();
+                        dirStream.result()
+                                .stream()
+                                .map(fullPath -> Paths.get(fullPath)
+                                        .getFileName())
+                                .forEach(file -> {
+                                    String[] components = file.getFileName()
+                                            .toString()
+                                            .split("\\.");
+                                    JsonObject json = new JsonObject();
+                                    json.put("pid", components[0]);
+                                    json.put("recording", components[1]);
+                                    results.add(json);
+                                });
+                        handler.complete(results);
+                    }
+                });
     }
 
     @Override
@@ -355,13 +355,13 @@ public class JavaFlightRecorder implements Profiler {
         // File name example: 164722.1.jfr
         String path = workingDir() + "/" + filename;
         rc.response()
-          .sendFile(path, status);
+                .sendFile(path, status);
         return status;
     }
 
     @Override
     public void listSavedDumps(Future<JsonArray> handler) {
-        s3Client.getBucket(dumpsBucket, new GetBucketRequest().withPrefix(dumpsPrefix), response -> {
+        s3Client.getBucket(dumpsBucket, new GetBucketRequest(), response -> {
             JsonArray result = new JsonArray();
             response.getData()
                     .getContentsList()
@@ -378,7 +378,7 @@ public class JavaFlightRecorder implements Profiler {
 
     @Override
     public void listSavedFlames(Future<JsonArray> handler) {
-        s3Client.getBucket(flamesBucket, new GetBucketRequest().withPrefix(flamesPrefix), response -> {
+        s3Client.getBucket(flamesBucket, new GetBucketRequest(), response -> {
             JsonArray result = new JsonArray();
             response.getData()
                     .getContentsList()
@@ -429,8 +429,8 @@ public class JavaFlightRecorder implements Profiler {
 
         if ("cpu".equalsIgnoreCase(eventType)) {
             return new String[] { JdkTypeIDs.EXECUTION_SAMPLE };// ,
-                                                                // NATIVE_METHOD_SAMPLE
-                                                                // };
+            // NATIVE_METHOD_SAMPLE
+            // };
         } else if ("locks".equalsIgnoreCase(eventType)) {
             return new String[] { JdkTypeIDs.MONITOR_ENTER };
         } else if ("exceptions".equalsIgnoreCase(eventType)) {
@@ -485,9 +485,9 @@ public class JavaFlightRecorder implements Profiler {
         StringBuilder str = new StringBuilder();
         StringBuilder err = new StringBuilder();
         process.stdout()
-               .handler(str::append);
+                .handler(str::append);
         process.stderr()
-               .handler(err::append);
+                .handler(err::append);
         process.exitHandler(status -> {
             if (status.intValue() != 0) {
                 processCompleteHandler.fail(new ProfilerError("jcmd status code was " + status + ", stderr=" + err));

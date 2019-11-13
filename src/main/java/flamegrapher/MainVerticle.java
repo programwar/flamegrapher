@@ -162,7 +162,7 @@ public class MainVerticle extends AbstractVerticle {
                   jfr.flames(eventType, pid, recording, newFuture(rc));
               });
 
-        router.post("/form/file")
+        router.post("/api/form/file")
               .handler(rc -> {
                   Set<FileUpload> fileUploadSet = rc.fileUploads();
                   Iterator<FileUpload> fileUploadIterator = fileUploadSet.iterator();

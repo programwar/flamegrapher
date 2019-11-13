@@ -1,6 +1,7 @@
 var path = require("path");
 var webpack = require("webpack");
 const ExtractTextPlugin = require("extract-text-webpack-plugin");
+const VueLoaderPlugin = require('vue-loader/lib/plugin')
 
 module.exports = {
   entry: "./src/main.js",
@@ -33,6 +34,14 @@ module.exports = {
         })
       },
       {
+        test: /\.scss$/,
+        use: [
+          'vue-style-loader',
+          'css-loader',
+          'sass-loader'
+        ]
+      },      
+      {
         test: /\.(png|jpg|gif|svg)$/,
         loader: "file-loader",
         options: {
@@ -57,7 +66,7 @@ module.exports = {
   performance: {
     hints: false
   },
-  plugins: [new ExtractTextPlugin("main.css")],
+  plugins: [new ExtractTextPlugin("main.css"), new VueLoaderPlugin()],
   devtool: "#eval-source-map"
 };
 
