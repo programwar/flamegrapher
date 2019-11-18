@@ -7,8 +7,8 @@ import static org.junit.Assert.assertThat;
 import java.io.File;
 import java.io.IOException;
 
-import com.oracle.jmc.flightrecorder.CouldNotLoadRecordingException;
-import com.oracle.jmc.flightrecorder.jdk.JdkTypeIDs;
+import org.openjdk.jmc.flightrecorder.CouldNotLoadRecordingException;
+import org.openjdk.jmc.flightrecorder.jdk.JdkTypeIDs;
 
 import org.junit.Test;
 
@@ -27,7 +27,7 @@ public class JfrParserTest {
 
     @Test
     public void jdk10() throws IOException, CouldNotLoadRecordingException {
-        StackFrame s = parse("78460.1.jfr", JdkTypeIDs.EXECUTION_SAMPLE, JavaFlightRecorder.NATIVE_METHOD_SAMPLE);
+        StackFrame s = parse("78460.1.jfr", JdkTypeIDs.EXECUTION_SAMPLE);
         assertNotNull(s);
         assertNotNull(s.getChildren());
         assertThat(s.getChildren()

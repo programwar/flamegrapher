@@ -1,26 +1,26 @@
 package flamegrapher.backend;
 
-import static com.oracle.jmc.flightrecorder.JfrAttributes.EVENT_STACKTRACE;
+import org.openjdk.jmc.flightrecorder.JfrAttributes;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Stack;
 
-import com.oracle.jmc.common.IMCFrame;
-import com.oracle.jmc.common.IMCMethod;
-import com.oracle.jmc.common.IMCStackTrace;
-import com.oracle.jmc.common.IMemberAccessor;
-import com.oracle.jmc.common.item.IItem;
-import com.oracle.jmc.common.item.IItemCollection;
-import com.oracle.jmc.common.item.IItemIterable;
-import com.oracle.jmc.common.item.ItemFilters;
-import com.oracle.jmc.common.unit.IQuantity;
-import com.oracle.jmc.common.unit.UnitLookup;
-import com.oracle.jmc.flightrecorder.CouldNotLoadRecordingException;
-import com.oracle.jmc.flightrecorder.JfrAttributes;
-import com.oracle.jmc.flightrecorder.JfrLoaderToolkit;
-import com.oracle.jmc.flightrecorder.jdk.JdkAttributes;
-import com.oracle.jmc.flightrecorder.jdk.JdkTypeIDs;
+import org.openjdk.jmc.common.IMCFrame;
+import org.openjdk.jmc.common.IMCMethod;
+import org.openjdk.jmc.common.IMCStackTrace;
+import org.openjdk.jmc.common.item.IMemberAccessor;
+import org.openjdk.jmc.common.item.IItem;
+import org.openjdk.jmc.common.item.IItemCollection;
+import org.openjdk.jmc.common.item.IItemIterable;
+import org.openjdk.jmc.common.item.ItemFilters;
+import org.openjdk.jmc.common.unit.IQuantity;
+import org.openjdk.jmc.common.unit.UnitLookup;
+import org.openjdk.jmc.flightrecorder.CouldNotLoadRecordingException;
+import org.openjdk.jmc.flightrecorder.JfrAttributes;
+import org.openjdk.jmc.flightrecorder.JfrLoaderToolkit;
+import org.openjdk.jmc.flightrecorder.jdk.JdkAttributes;
+import org.openjdk.jmc.flightrecorder.jdk.JdkTypeIDs;
 
 import flamegrapher.backend.JsonOutputWriter.StackFrame;
 
@@ -33,13 +33,12 @@ public class JfrParser {
         JsonOutputWriter writer = new JsonOutputWriter();
         filtered.forEach(events -> {
             IMemberAccessor<IMCStackTrace, IItem> accessor = events.getType()
-                .getAccessor(EVENT_STACKTRACE.getKey());
+                .getAccessor(JfrAttributes.EVENT_STACKTRACE.getKey());
 
             for (IItem item : events) {
                 Stack<String> stack = new Stack<>();
                 IMCStackTrace stackTrace = accessor.getMember(item);
                 if (stackTrace == null || stackTrace.getFrames() == null) {
-
                     continue;
                 }
                 stackTrace.getFrames()
@@ -75,7 +74,7 @@ public class JfrParser {
                 IMemberAccessor<IQuantity, IItem> accessor = events.getType()
                                                                    .getAccessor(JdkAttributes.ALLOCATION_SIZE.getKey());
                 IQuantity allocationSize = accessor.getMember(item);
-                return allocationSize.clampedLongValueIn(UnitLookup.BYTES);
+                return allocationSize.clampedLongValueIn(UnitLookup.BYTE);
             }
         }
         // For all other event types, simply return 1.
@@ -96,7 +95,7 @@ public class JfrParser {
                                                                          .getAccessor(JfrAttributes.DURATION.getKey());
 
         if (durationAccessor != null) {
-            duration = durationAccessor.getMember(item).clampedLongValueIn(UnitLookup.MILLISECONDS);
+            duration = durationAccessor.getMember(item).clampedLongValueIn(UnitLookup.MILLISECOND);
 
         } else {
             final IMemberAccessor<IQuantity, IItem> startAccessor = events.getType()
@@ -106,7 +105,7 @@ public class JfrParser {
 
             if (startAccessor != null && endAccessor != null) {
                 duration = endAccessor.getMember(item).subtract(startAccessor.getMember(item))
-                                                      .clampedLongValueIn(UnitLookup.MILLISECONDS);
+                                                      .clampedLongValueIn(UnitLookup.MILLISECOND);
             } else {
                 throw new ParserException("Event duration is unknown!");
             }
