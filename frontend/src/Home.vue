@@ -3,14 +3,14 @@
     <b-row>
         <b-col>
             <b-table striped hover fixed :items="items" :fields="fields">
-            <template slot="name" slot-scope="row">
-              <div class="text-truncate" v-b-tooltip.hover.top="row.item.name" >{{row.item.name}}</div>
+            <template v-slot:cell(name)="row">
+              <div class="text-truncate" v-b-tooltip.hover.top="row.item.name" >{{row.item.name}}</div>         
             </template>
             <template slot="state" slot-scope="row">
               <b-progress :value="100" variant="secondary" :animated="true" class="mb-3" v-show="row.item.loading"></b-progress>
               <div v-show="!row.item.loading">{{row.item.state}}</div>
             </template>
-            <template slot="actions" slot-scope="row">
+            <template v-slot:cell(actions)="row">
                 <b-dropdown size="sm" text="Choose here">
                   <b-dropdown-item :disabled="row.item.state === 'Recording'" @click="start(row.item)">Start</b-dropdown-item>
                   <b-dropdown-item :disabled="row.item.state === 'Not recording'" @click="stop(row.item)">Stop</b-dropdown-item>
@@ -18,7 +18,7 @@
                   <b-dropdown-item size="sm" :disabled="!row.item.hasDump" @click="saveDump(row.item)">Save</b-dropdown-item>
                 </b-dropdown>
             </template>
-            <template slot="view" slot-scope="row">
+            <template v-slot:cell(view)="row">
               <flamegraph-dropdown :item="row.item" :disabled="!row.item.hasDump"></flamegraph-dropdown>
             </template>
             </b-table>
@@ -115,3 +115,13 @@ export default {
   }
 };
 </script>
+
+
+<!-- SASS styling -->
+<style lang="scss">
+  .text-truncate {
+    text-overflow: ellipsis;
+    max-width: 180px;
+  }
+</style>
+
