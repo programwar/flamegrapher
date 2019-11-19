@@ -162,6 +162,18 @@ public class MainVerticle extends AbstractVerticle {
                   jfr.flames(eventType, pid, recording, newFuture(rc));
               });
 
+        router.get("/api/flames/duration/:eventType/:pid/:recording")
+                .handler(rc -> {
+                    String pid = rc.request()
+                            .getParam("pid");
+                    String recording = rc.request()
+                            .getParam("recording");
+                    String eventType = rc.request()
+                            .getParam("eventType");
+
+                    jfr.duration(eventType, pid, recording, newFuture(rc));
+                });
+
         router.post("/api/form/file")
               .handler(rc -> {
                   Set<FileUpload> fileUploadSet = rc.fileUploads();

@@ -7,6 +7,7 @@ import static org.junit.Assert.assertThat;
 import java.io.File;
 import java.io.IOException;
 
+import flamegrapher.model.RecordingDuration;
 import org.openjdk.jmc.flightrecorder.CouldNotLoadRecordingException;
 import org.openjdk.jmc.flightrecorder.jdk.JdkTypeIDs;
 
@@ -56,6 +57,13 @@ public class JfrParserTest {
         assertThat(s.getValue(), equalTo(917496L));
     }
 
+    @Test
+    public void jdk10JfrDuration() throws IOException, CouldNotLoadRecordingException {
+        RecordingDuration s = getJfrDuration("7856.1.jfr", JdkTypeIDs.EXECUTION_SAMPLE);
+        assertNotNull(s);
+    }
+
+
     private StackFrame parse(String filename, String... eventTypes) throws IOException, CouldNotLoadRecordingException {
         File jfr = getFile(filename);
         JfrParser parse = new JfrParser();
@@ -69,5 +77,12 @@ public class JfrParserTest {
                                      .getFile();
         File jfr = new File(pathname);
         return jfr;
+    }
+
+    private RecordingDuration getJfrDuration(String filename, String... eventTypes) throws IOException, CouldNotLoadRecordingException {
+        File jfr = getFile(filename);
+        JfrParser parse = new JfrParser();
+        RecordingDuration s = parse.getJfrDuration(jfr, eventTypes);
+        return s;
     }
 }

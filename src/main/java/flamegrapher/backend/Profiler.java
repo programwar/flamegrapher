@@ -2,6 +2,7 @@ package flamegrapher.backend;
 
 import flamegrapher.backend.JsonOutputWriter.StackFrame;
 import flamegrapher.model.Item;
+import flamegrapher.model.RecordingDuration;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -34,4 +35,6 @@ public interface Profiler {
     void saveFlame(String eventType, String pid, String recording, Future<JsonObject> handler);
 
     Future<Void> dumpFromLocal(String filename, RoutingContext rc);
+
+    void duration(String eventType, String pid, String recording, Future<RecordingDuration> handler);
 }

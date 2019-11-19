@@ -22,17 +22,13 @@ import com.hubrick.vertx.s3.model.request.GetBucketRequest;
 import com.hubrick.vertx.s3.model.request.GetObjectRequest;
 import com.hubrick.vertx.s3.model.request.PutObjectRequest;
 import com.julienviet.childprocess.Process;
+import flamegrapher.model.*;
 import org.openjdk.jmc.flightrecorder.CouldNotLoadRecordingException;
 import org.openjdk.jmc.flightrecorder.jdk.JdkTypeIDs;
 
 import org.apache.commons.lang3.StringUtils;
 
 import flamegrapher.backend.JsonOutputWriter.StackFrame;
-import flamegrapher.model.Item;
-import flamegrapher.model.JVM;
-import flamegrapher.model.JVMType;
-import flamegrapher.model.Processes;
-import flamegrapher.model.State;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -501,5 +497,32 @@ public class JavaFlightRecorder implements Profiler {
             }
         }, future);
         return f;
+    }
+
+    public void duration(String eventType, String pid, String recording, Future<RecordingDuration> handler) {
+        String filename = filename(pid, recording);
+        getJfrDuration(eventType, filename, handler);
+    }
+
+    private void getJfrDuration(String eventType, String filename, Future<RecordingDuration> handler) {
+        JfrParser parser = new JfrParser();
+        String[] events = getEvents(eventType);
+        vertx.<RecordingDuration>executeBlocking(future -> {
+            try {
+
+                logger.info("Generating JFR duration for event [" + eventType + "] file: " + filename);
+                RecordingDuration json = parser.getJfrDuration(new File(filename), events);
+                future.complete(json);
+            } catch (Exception e) {
+                handler.fail(e);
+            }
+        }, result -> {
+
+            if (result.succeeded()) {
+                handler.complete(result.result());
+            } else {
+                handler.fail(result.cause());
+            }
+        });
     }
 }

@@ -1,37 +1,40 @@
 package flamegrapher.backend;
 
+import flamegrapher.jfrextractors.ItemAttributeExtractor;
+import flamegrapher.model.RecordingDuration;
+import org.openjdk.jmc.common.item.*;
+import org.openjdk.jmc.common.unit.*;
 import org.openjdk.jmc.flightrecorder.JfrAttributes;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.Stack;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import org.openjdk.jmc.common.IMCFrame;
-import org.openjdk.jmc.common.IMCMethod;
 import org.openjdk.jmc.common.IMCStackTrace;
-import org.openjdk.jmc.common.item.IMemberAccessor;
-import org.openjdk.jmc.common.item.IItem;
-import org.openjdk.jmc.common.item.IItemCollection;
-import org.openjdk.jmc.common.item.IItemIterable;
-import org.openjdk.jmc.common.item.ItemFilters;
-import org.openjdk.jmc.common.unit.IQuantity;
-import org.openjdk.jmc.common.unit.UnitLookup;
 import org.openjdk.jmc.flightrecorder.CouldNotLoadRecordingException;
-import org.openjdk.jmc.flightrecorder.JfrAttributes;
 import org.openjdk.jmc.flightrecorder.JfrLoaderToolkit;
 import org.openjdk.jmc.flightrecorder.jdk.JdkAttributes;
 import org.openjdk.jmc.flightrecorder.jdk.JdkTypeIDs;
 
 import flamegrapher.backend.JsonOutputWriter.StackFrame;
+import org.openjdk.jmc.flightrecorder.stacktrace.FrameSeparator;
+import org.openjdk.jmc.flightrecorder.stacktrace.StacktraceFormatToolkit;
 
 public class JfrParser {
 
     public StackFrame toJson(File jfr, String... eventTypes) throws IOException, CouldNotLoadRecordingException {
+
         IItemCollection filtered = JfrLoaderToolkit.loadEvents(jfr)
             .apply(ItemFilters.type(eventTypes));
+                //.apply(ItemFilters.rangeContainedIn(JfrAttributes.LIFETIME, range));
 
         JsonOutputWriter writer = new JsonOutputWriter();
         filtered.forEach(events -> {
+            // events is an IItemIterable array of events sharing a single type.
             IMemberAccessor<IMCStackTrace, IItem> accessor = events.getType()
                 .getAccessor(JfrAttributes.EVENT_STACKTRACE.getKey());
 
@@ -52,6 +55,7 @@ public class JfrParser {
 
         return writer.getStackFrame();
     }
+
 
     /**
      * Returns the value according to the event type. For most event types, we
@@ -115,21 +119,64 @@ public class JfrParser {
     }
 
     private String getFrameName(IMCFrame frame) {
-        // TODO: Make it a configuration parameter
-        boolean ignoreLineNumbers = false;
-
-        StringBuilder methodBuilder = new StringBuilder();
-        IMCMethod method = frame.getMethod();
-        methodBuilder.append(method.getType()
-                                   .getFullName())
-                     .append("#")
-                     .append(method.getMethodName());
-
-        if (!ignoreLineNumbers) {
-            methodBuilder.append(":");
-            methodBuilder.append(frame.getFrameLineNumber());
-        }
-        return methodBuilder.toString();
+        return StacktraceFormatToolkit.formatFrame(
+                frame,
+                new FrameSeparator(FrameSeparator.FrameCategorization.LINE, false),
+                false,
+                false,
+                true,
+                true,
+                false,
+                true
+        );
     }
 
+    public RecordingDuration getJfrDuration(File jfr, String[] eventTypes) throws IOException, CouldNotLoadRecordingException {
+        /*
+        String startDate = "2019-10-23 11:45:10";
+        String endDate = "2019-10-23 11:45:11";
+        LocalDateTime localDateTime = LocalDateTime.parse(startDate,
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss") );
+
+        long startMillis = localDateTime
+                .atZone(ZoneId.systemDefault())
+                .toInstant().toEpochMilli();
+
+        localDateTime = LocalDateTime.parse(endDate,
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss") );
+
+        long endMililis = localDateTime
+                .atZone(ZoneId.systemDefault())
+                .toInstant().toEpochMilli();
+
+
+        IQuantity start = UnitLookup.EPOCH_MS.quantity(startMillis);
+        IQuantity end = UnitLookup.EPOCH_MS.quantity(endMililis);
+        IRange<IQuantity> range = QuantityRange.createWithEnd(start, end);
+         */
+
+        RecordingDuration duration = new RecordingDuration();
+
+        IItemCollection filtered = JfrLoaderToolkit.loadEvents(jfr)
+                .apply(ItemFilters.type(eventTypes));
+
+        Supplier<Stream> stream = () -> StreamSupport.stream(filtered.spliterator(), false)
+                                                .flatMap(eventStream -> StreamSupport.stream(eventStream.spliterator(), false));
+
+        var firstEvent = (IItem)stream.get().findFirst().get();
+        var lastEvent = (IItem)stream.get().skip(stream.get().count() - 1).findFirst().get();
+
+        duration.setStartMilliseconds(ItemAttributeExtractor.getEventStartTimeMs(firstEvent));
+        duration.setEndMilliseconcs(ItemAttributeExtractor.getEventStartTimeMs(lastEvent));
+
+        /*IType<IItem> itemType = ItemToolkit.getItemType(firstEvent);
+        duration.setStartMilliseconds(itemType.getAccessor(JfrAttributes.START_TIME.getKey()).getMember(firstEvent)
+                                                .in(UnitLookup.EPOCH_MS).longValue());
+
+        itemType = ItemToolkit.getItemType(lastEvent);
+        duration.setEndMilliseconcs(itemType.getAccessor(JfrAttributes.START_TIME.getKey()).getMember(lastEvent)
+                                            .in(UnitLookup.EPOCH_MS).longValue());*/
+
+        return duration;
+    }
 }
